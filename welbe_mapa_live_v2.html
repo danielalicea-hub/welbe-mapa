@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Welbe — Mapa de Cobertura Red MetLife</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:Arial,sans-serif;background:#032E37;color:#fff;height:100vh;display:flex;flex-direction:column;}
+header{padding:12px 20px;display:flex;align-items:center;gap:16px;background:#032E37;border-bottom:1px solid #0a4a55;}
+header h1{font-size:18px;font-weight:700;color:#36CC69;}
+header span{font-size:13px;color:#84F7B2;opacity:.8;}
+.pills{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center;}
+.pill{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:.15s;}
+.pill.all{background:#36CC69;color:#032E37;}
+.pill.p1{background:#6F69FD;color:#fff;}
+.pill.p2p3{background:#84F7B2;color:#032E37;}
+.pill.inactive{background:rgba(255,255,255,.1);color:#aaa;}
+.refresh-btn{padding:5px 12px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:1px solid #36CC69;background:transparent;color:#36CC69;transition:.15s;}
+.refresh-btn:hover{background:#36CC69;color:#032E37;}
+.main{display:flex;flex:1;overflow:hidden;}
+#map{flex:1;height:100%;}
+.sidebar{width:300px;background:#021f28;overflow-y:auto;border-left:1px solid #0a4a55;display:flex;flex-direction:column;}
+.sidebar-header{padding:14px 16px;background:#032E37;border-bottom:1px solid #0a4a55;font-size:13px;font-weight:700;color:#84F7B2;display:flex;justify-content:space-between;align-items:center;}
+.last-update{font-size:11px;color:#84F7B2;opacity:.6;font-weight:400;}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px;}
+.stat{background:#032E37;border-radius:8px;padding:10px;text-align:center;}
+.stat-n{font-size:22px;font-weight:700;color:#36CC69;}
+.stat-l{font-size:11px;color:#84F7B2;margin-top:2px;}
+.chart-wrap{padding:12px;border-top:1px solid #0a4a55;}
+.chart-title{font-size:12px;color:#84F7B2;margin-bottom:8px;font-weight:600;}
+#detail{padding:14px 16px;border-top:1px solid #0a4a55;flex:1;}
+.detail-city{font-size:15px;font-weight:700;color:#36CC69;margin-bottom:4px;}
+.detail-state{font-size:12px;color:#84F7B2;margin-bottom:10px;}
+.detail-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-bottom:10px;}
+.badge-p1{background:#6F69FD;color:#fff;}
+.badge-p2p3{background:#84F7B2;color:#032E37;}
+.esp-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #0a4a55;font-size:12px;}
+.esp-name{color:#ccc;max-width:180px;}
+.esp-cnt{font-weight:700;font-size:14px;}
+.esp-cnt.ok{color:#36CC69;}
+.esp-cnt.gap{color:#ff6b6b;}
+.bar{height:4px;border-radius:2px;margin-top:3px;background:#0a4a55;}
+.bar-fill{height:100%;border-radius:2px;transition:.3s;}
+.hint{color:#84F7B2;font-size:12px;opacity:.6;text-align:center;padding:20px;}
+.legend{padding:10px 16px;display:flex;gap:14px;flex-wrap:wrap;border-top:1px solid #0a4a55;}
+.leg-item{display:flex;align-items:center;gap:6px;font-size:11px;color:#84F7B2;}
+.dot{width:12px;height:12px;border-radius:50%;display:inline-block;}
+.loading{text-align:center;padding:20px;color:#84F7B2;font-size:13px;}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Welbe — Red MetLife</h1>
+    <span>Cobertura de especialistas · datos en vivo</span>
+  </div>
+  <div class="pills">
+    <button class="pill all" onclick="filtrar('all')">Todas</button>
+    <button class="pill p1 inactive" onclick="filtrar('P1')">P1</button>
+    <button class="pill p2p3 inactive" onclick="filtrar('P2P3')">P2P3</button>
+    <button class="refresh-btn" onclick="cargarDatos()">↻ Actualizar</button>
+  </div>
+</header>
+
+<div class="main">
+  <div id="map"></div>
+  <div class="sidebar">
+    <div class="sidebar-header">
+      Resumen de cobertura
+      <span class="last-update" id="last-update">Cargando...</span>
+    </div>
+    <div class="stats-grid">
+      <div class="stat"><div class="stat-n" id="s-total">—</div><div class="stat-l">Doctores activos</div></div>
+      <div class="stat"><div class="stat-n" id="s-ciudades">—</div><div class="stat-l">Ciudades</div></div>
+      <div class="stat"><div class="stat-n" id="s-ok">—</div><div class="stat-l">Con cobertura ≥2</div></div>
+      <div class="stat"><div class="stat-n" id="s-gap" style="color:#ff6b6b">—</div><div class="stat-l">Con gap</div></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Doctores por especialidad</div>
+      <canvas id="espChart" height="140"></canvas>
+    </div>
+    <div id="detail"><div class="hint">Haz clic en una ciudad para ver el detalle</div></div>
+    <div class="legend">
+      <div class="leg-item"><span class="dot" style="background:#36CC69"></span>Cobertura completa</div>
+      <div class="leg-item"><span class="dot" style="background:#FFD166"></span>Gaps parciales</div>
+      <div class="leg-item"><span class="dot" style="background:#ff6b6b"></span>Gaps críticos</div>
+      <div class="leg-item"><span class="dot" style="background:#888"></span>Sin doctores</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const URL_P1   = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSUpv7xDdnSPMmdNjSuucjNHJRfbd53wzFhHSu7nIPo_qlfNB4OyCs5kpN00ZFiIf0ibCmWbVuWA_Kk/pub?gid=863947103&single=true&output=csv";
+const URL_P2P3 = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSUpv7xDdnSPMmdNjSuucjNHJRfbd53wzFhHSu7nIPo_qlfNB4OyCs5kpN00ZFiIf0ibCmWbVuWA_Kk/pub?gid=727516091&single=true&output=csv";
+
+const ESP_SHORT = ["Ginecología","Medicina Interna","Oftalmología","Ortopedia","ORL"];
+const ESP_COLORS = ["#36CC69","#6F69FD","#84F7B2","#FFD166","#EF476F"];
+
+const COORDS = {
+  "Ciudad Juárez":[31.69,-106.42],"Chihuahua":[28.63,-106.07],"Delicias":[28.19,-105.47],
+  "Monterrey":[25.67,-100.31],"San Pedro Garza García":[25.66,-100.40],
+  "Guadalupe":[25.68,-100.25],"San Nicolás de los Garza":[25.73,-100.30],"General Escobedo":[25.80,-100.33],
+  "Guadalajara":[20.67,-103.35],"Zapopan":[20.72,-103.39],"Puerto Vallarta":[20.61,-105.23],
+  "Chapala":[20.30,-103.19],"Lagos de Moreno":[21.36,-101.93],"Tlajomulco de Zuñiga":[20.47,-103.44],
+  "San Juan de los Lagos":[21.25,-102.34],
+  "Santiago de Querétaro":[20.59,-100.39],"El Pueblito":[20.55,-100.44],
+  "Corregidora":[20.54,-100.44],"Tequisquiapan":[20.52,-99.89],"San Juan del Rio":[20.38,-99.99],"El Marqués":[20.62,-100.44],
+  "Heroica Puebla de Zaragoza":[19.04,-98.20],"San Andrés Cholula":[19.06,-98.30],"Tlaxcalancingo":[19.02,-98.25],"Atlixco":[18.91,-98.44],
+  "Morelia":[19.70,-101.19],"Zamora de Hidalgo":[19.99,-102.28],"Uruapan":[19.42,-102.06],"Sahuayo de Morelos":[20.05,-102.72],
+  "Mérida":[20.97,-89.62],
+  "Torreón":[25.54,-103.45],"Saltillo":[25.42,-101.00],"Monclova":[26.91,-101.42],"Ramos Arizpe":[25.55,-100.94],
+  "San Luis Potosí":[22.15,-100.98],"Soledad de Graciano Sánchez":[22.18,-100.93],
+  "Villahermosa":[17.99,-92.93],"Veracruz":[19.18,-96.14],"Tepic":[21.50,-104.89],
+  "Durango":[24.02,-104.66],"Pachuca":[20.12,-98.73],"Aguascalientes":[21.88,-102.29],
+  "Benito Juárez":[19.37,-99.16],"Cuauhtémoc":[19.43,-99.14],"Gustavo A. Madero":[19.48,-99.11],
+  "Coyoacán":[19.35,-99.16],"Miguel Hidalgo":[19.42,-99.19],"Iztapalapa":[19.36,-99.07],
+  "Tlalpan":[19.29,-99.17],"Álvaro Obregón":[19.36,-99.20],"Azcapotzalco":[19.48,-99.19],
+  "Xochimilco":[19.25,-99.10],"Cuajimalpa de Morelos":[19.36,-99.30],"La Magdalena Contreras":[19.32,-99.22],
+  "Iztacalco":[19.40,-99.10],"Tláhuac":[19.29,-99.00],"Venustiano Carranza":[19.43,-99.10],
+  "Tlalnepantla de Baz":[19.54,-99.20],"Naucalpan de Juárez":[19.47,-99.24],
+  "Cuautitlán Izcalli":[19.64,-99.22],"Toluca de Lerdo":[19.29,-99.66],
+  "Metepec":[19.25,-99.60],"Huixquilucan":[19.41,-99.30],"Ecatepec de Morelos":[19.60,-99.05],
+  "Ciudad Nezahualcóyotl":[19.40,-99.02],"San Mateo Atenco":[19.27,-99.53],
+  "Coacalco de Berriozábal":[19.64,-99.10],"Ixtapaluca":[19.31,-98.88],"Chalco":[19.27,-98.90],
+  "Ciudad López Mateos":[19.56,-99.26],"Tecámac":[19.71,-98.97],"Lerma":[19.28,-99.82],
+  "Tijuana":[32.52,-117.04],"Colima":[19.24,-103.72],
+  "León de los Aldama":[21.12,-101.68],"Silao":[20.93,-101.43],
+  "Acapulco":[16.86,-99.88],"Lázaro Cárdenas":[17.96,-102.19],"Cuernavaca":[18.92,-99.23],
+  "Oaxaca":[17.07,-96.72],"Cancún":[21.16,-86.85],"Culiacán":[24.79,-107.39],
+  "Ciudad Victoria":[23.74,-99.15],"Heroica Matamoros":[25.87,-97.50],
+  "Nuevo Laredo":[27.48,-99.52],"Tampico":[22.23,-97.86],"Xalapa":[19.54,-96.93],
+};
+
+let filtroActivo = 'all';
+let markers = [];
+let DATA = [];
+
+const map = L.map('map').setView([22.5,-102],5);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{
+  attribution:'&copy; OpenStreetMap, CartoDB',maxZoom:18
+}).addTo(map);
+
+const ctx = document.getElementById('espChart').getContext('2d');
+const espChart = new Chart(ctx,{
+  type:'bar',
+  data:{labels:ESP_SHORT,datasets:[{data:[0,0,0,0,0],backgroundColor:ESP_COLORS,borderRadius:4,borderSkipped:false}]},
+  options:{plugins:{legend:{display:false}},scales:{
+    x:{ticks:{color:'#84F7B2',font:{size:9}},grid:{color:'#0a4a55'}},
+    y:{ticks:{color:'#84F7B2',font:{size:10}},grid:{color:'#0a4a55'}}
+  }}
+});
+
+function parseCSV(text) {
+  const lines = text.trim().split('\n').map(l => l.split(',').map(c => c.trim().replace(/^"|"$/g,'')));
+  return lines;
+}
+
+async function cargarDatos() {
+  document.getElementById('last-update').textContent = 'Actualizando...';
+  try {
+    const [r1, r2] = await Promise.all([
+      fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(URL_P1)}`).then(r=>r.text()),
+      fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(URL_P2P3)}`).then(r=>r.text())
+    ]);
+
+    const rows1 = parseCSV(r1);
+    const rows2 = parseCSV(r2);
+
+    function parsearHoja(rows, tipo) {
+      return rows.slice(1)
+        .filter(r => r[0] && r[1] && COORDS[r[1]])
+        .map(r => ({
+          estado: r[0], ciudad: r[1],
+          conteos: [0,1,2,3,4].map(i => parseInt(r[i+2])||0),
+          tipo,
+          lat: COORDS[r[1]][0], lng: COORDS[r[1]][1],
+          get total(){ return this.conteos.reduce((a,b)=>a+b,0); }
+        }));
+    }
+
+    const p1   = parsearHoja(rows1, 'P1');
+    const p2p3 = parsearHoja(rows2, 'P2P3');
+    const ciudadesP1 = new Set(p1.map(d=>d.ciudad));
+    DATA = [...p1, ...p2p3.filter(d=>!ciudadesP1.has(d.ciudad))];
+
+    const ahora = new Date().toLocaleTimeString('es-MX',{hour:'2-digit',minute:'2-digit'});
+    document.getElementById('last-update').textContent = `Actualizado ${ahora}`;
+
+    renderMarkers();
+  } catch(e) {
+    document.getElementById('last-update').textContent = 'Error al cargar';
+    console.error(e);
+  }
+}
+
+function getColor(d) {
+  if(d.total===0) return '#888';
+  const gaps = d.conteos.filter(c=>c<2).length;
+  if(gaps===0) return '#36CC69';
+  if(gaps<=2)  return '#FFD166';
+  return '#ff6b6b';
+}
+
+function renderMarkers() {
+  markers.forEach(m=>map.removeLayer(m));
+  markers=[];
+  const vis = filtroActivo==='all' ? DATA : DATA.filter(d=>d.tipo===filtroActivo);
+
+  vis.forEach(d=>{
+    const c = getColor(d);
+    const r = Math.min(8+d.total*0.5, 26);
+    const m = L.circleMarker([d.lat,d.lng],{
+      radius:r, fillColor:c, color:'#fff', weight:1.5, fillOpacity:.85
+    }).addTo(map);
+    m.bindTooltip(`<b>${d.ciudad}</b><br>${d.estado}<br><b>${d.total} doctores</b> (${d.tipo})`,{sticky:true});
+    m.on('click',()=>mostrarDetalle(d));
+    markers.push(m);
+  });
+
+  actualizarStats(vis);
+}
+
+function actualizarStats(vis) {
+  const total    = vis.reduce((s,d)=>s+d.total,0);
+  const ok       = vis.filter(d=>d.conteos.every(c=>c>=2)).length;
+  const gap      = vis.filter(d=>d.conteos.some(c=>c<2)||d.total===0).length;
+  document.getElementById('s-total').textContent    = total;
+  document.getElementById('s-ciudades').textContent = vis.length;
+  document.getElementById('s-ok').textContent       = ok;
+  document.getElementById('s-gap').textContent      = gap;
+  const totEsp=[0,0,0,0,0];
+  vis.forEach(d=>d.conteos.forEach((c,i)=>totEsp[i]+=c));
+  espChart.data.datasets[0].data=totEsp;
+  espChart.update();
+}
+
+function mostrarDetalle(d) {
+  const div=document.getElementById('detail');
+  const maxVal=Math.max(...d.conteos,1);
+  let html=`<div class="detail-city">${d.ciudad}</div>
+  <div class="detail-state">${d.estado}</div>
+  <span class="detail-badge ${d.tipo==='P1'?'badge-p1':'badge-p2p3'}">${d.tipo}</span>
+  <div style="margin-top:8px">`;
+  d.conteos.forEach((c,i)=>{
+    const pct=Math.round(c/maxVal*100);
+    html+=`<div class="esp-row">
+      <div><div class="esp-name">${ESP_SHORT[i]}</div>
+      <div class="bar"><div class="bar-fill" style="width:${pct}%;background:${c>=2?'#36CC69':'#ff6b6b'}"></div></div></div>
+      <div class="esp-cnt ${c>=2?'ok':'gap'}">${c}</div>
+    </div>`;
+  });
+  html+=`</div><div style="margin-top:10px;font-size:11px;color:#84F7B2">
+    Total: <b style="color:#36CC69">${d.total}</b> &nbsp;|&nbsp; 
+    Gaps: <b style="color:#ff6b6b">${d.conteos.filter(c=>c<2).length}</b> especialidades
+  </div>`;
+  div.innerHTML=html;
+}
+
+function filtrar(tipo) {
+  filtroActivo=tipo;
+  document.querySelectorAll('.pill').forEach(p=>p.classList.add('inactive'));
+  if(tipo==='all') document.querySelector('.pill.all').classList.remove('inactive');
+  else document.querySelector('.pill.'+tipo.toLowerCase()).classList.remove('inactive');
+  renderMarkers();
+}
+
+cargarDatos();
+</script>
+</body>
+</html>

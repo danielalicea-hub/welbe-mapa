@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Welbe — Red MetLife</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:Arial,sans-serif;background:#032E37;color:#fff;height:100vh;display:flex;flex-direction:column;}
+header{padding:12px 20px;display:flex;align-items:center;gap:16px;background:#032E37;border-bottom:1px solid #0a4a55;}
+header h1{font-size:18px;font-weight:700;color:#36CC69;}
+header span{font-size:13px;color:#84F7B2;opacity:.8;}
+.pills{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center;}
+.pill{padding:5px 14px;border-radius:20px;font-size:12px;font-weight:600;cursor:pointer;border:none;transition:.15s;}
+.pill.all{background:#36CC69;color:#032E37;}
+.pill.p1{background:#6F69FD;color:#fff;}
+.pill.p2p3{background:#84F7B2;color:#032E37;}
+.pill.inactive{background:rgba(255,255,255,.1);color:#aaa;}
+.main{display:flex;flex:1;overflow:hidden;}
+#map{flex:1;height:100%;}
+.sidebar{width:300px;background:#021f28;overflow-y:auto;border-left:1px solid #0a4a55;display:flex;flex-direction:column;}
+.sidebar-header{padding:14px 16px;background:#032E37;border-bottom:1px solid #0a4a55;font-size:13px;font-weight:700;color:#84F7B2;}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:12px;}
+.stat{background:#032E37;border-radius:8px;padding:10px;text-align:center;}
+.stat-n{font-size:22px;font-weight:700;color:#36CC69;}
+.stat-l{font-size:11px;color:#84F7B2;margin-top:2px;}
+.chart-wrap{padding:12px;border-top:1px solid #0a4a55;}
+.chart-title{font-size:12px;color:#84F7B2;margin-bottom:8px;font-weight:600;}
+#detail{padding:14px 16px;border-top:1px solid #0a4a55;flex:1;}
+.detail-city{font-size:15px;font-weight:700;color:#36CC69;margin-bottom:4px;}
+.detail-state{font-size:12px;color:#84F7B2;margin-bottom:10px;}
+.detail-badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;margin-bottom:10px;}
+.badge-p1{background:#6F69FD;color:#fff;}
+.badge-p2p3{background:#84F7B2;color:#032E37;}
+.esp-row{display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid #0a4a55;font-size:12px;}
+.esp-name{color:#ccc;max-width:180px;}
+.esp-cnt{font-weight:700;font-size:14px;}
+.esp-cnt.ok{color:#36CC69;}
+.esp-cnt.gap{color:#ff6b6b;}
+.bar{height:4px;border-radius:2px;margin-top:3px;background:#0a4a55;}
+.bar-fill{height:100%;border-radius:2px;transition:.3s;}
+.hint{color:#84F7B2;font-size:12px;opacity:.6;text-align:center;padding:20px;}
+.legend{padding:10px 16px;display:flex;gap:14px;flex-wrap:wrap;border-top:1px solid #0a4a55;}
+.leg-item{display:flex;align-items:center;gap:6px;font-size:11px;color:#84F7B2;}
+.dot{width:12px;height:12px;border-radius:50%;display:inline-block;}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>Welbe — Red MetLife</h1><span>Cobertura de especialistas</span></div>
+  <div class="pills">
+    <button class="pill all" onclick="filtrar('all')">Todas</button>
+    <button class="pill p1 inactive" onclick="filtrar('P1')">P1</button>
+    <button class="pill p2p3 inactive" onclick="filtrar('P2P3')">P2P3</button>
+  </div>
+</header>
+<div class="main">
+  <div id="map"></div>
+  <div class="sidebar">
+    <div class="sidebar-header">Resumen de cobertura</div>
+    <div class="stats-grid">
+      <div class="stat"><div class="stat-n" id="s-total">0</div><div class="stat-l">Doctores activos</div></div>
+      <div class="stat"><div class="stat-n" id="s-ciudades">0</div><div class="stat-l">Ciudades</div></div>
+      <div class="stat"><div class="stat-n" id="s-ok">0</div><div class="stat-l">Con cobertura ≥2</div></div>
+      <div class="stat"><div class="stat-n" id="s-gap" style="color:#ff6b6b">0</div><div class="stat-l">Con gap</div></div>
+    </div>
+    <div class="chart-wrap">
+      <div class="chart-title">Doctores por especialidad</div>
+      <canvas id="espChart" height="140"></canvas>
+    </div>
+    <div id="detail"><div class="hint">Haz clic en una ciudad para ver el detalle</div></div>
+    <div class="legend">
+      <div class="leg-item"><span class="dot" style="background:#36CC69"></span>Cobertura completa</div>
+      <div class="leg-item"><span class="dot" style="background:#FFD166"></span>Gaps parciales</div>
+      <div class="leg-item"><span class="dot" style="background:#ff6b6b"></span>Gaps críticos</div>
+      <div class="leg-item"><span class="dot" style="background:#888"></span>Sin doctores</div>
+    </div>
+  </div>
+</div>
+<script>
+const ESP_SHORT=["Ginecología","Medicina Interna","Oftalmología","Ortopedia","ORL"];
+const ESP_COLORS=["#36CC69","#6F69FD","#84F7B2","#FFD166","#EF476F"];
+const DATA=[{"ciudad":"Ciudad Juárez","estado":"Chihuahua","total":10,"conteos":[3,2,1,3,1],"lat":31.69,"lng":-106.42,"tipo":"P1"},{"ciudad":"Azcapotzalco","estado":"Ciudad de México","total":9,"conteos":[1,6,1,1,0],"lat":19.48,"lng":-99.19,"tipo":"P1"},{"ciudad":"Coyoacán","estado":"Ciudad de México","total":28,"conteos":[15,3,2,6,2],"lat":19.35,"lng":-99.16,"tipo":"P1"},{"ciudad":"Cuajimalpa de Morelos","estado":"Ciudad de México","total":6,"conteos":[2,0,3,0,1],"lat":19.36,"lng":-99.3,"tipo":"P1"},{"ciudad":"Gustavo A. Madero","estado":"Ciudad de México","total":37,"conteos":[22,4,0,9,2],"lat":19.48,"lng":-99.11,"tipo":"P1"},{"ciudad":"Iztacalco","estado":"Ciudad de México","total":2,"conteos":[0,0,0,0,2],"lat":19.4,"lng":-99.1,"tipo":"P1"},{"ciudad":"Iztapalapa","estado":"Ciudad de México","total":19,"conteos":[6,3,4,5,1],"lat":19.36,"lng":-99.07,"tipo":"P1"},{"ciudad":"La Magdalena Contreras","estado":"Ciudad de México","total":17,"conteos":[7,1,1,5,3],"lat":19.32,"lng":-99.22,"tipo":"P1"},{"ciudad":"Tlalpan","estado":"Ciudad de México","total":25,"conteos":[4,8,1,7,5],"lat":19.29,"lng":-99.17,"tipo":"P1"},{"ciudad":"Tláhuac","estado":"Ciudad de México","total":2,"conteos":[1,0,1,0,0],"lat":19.29,"lng":-99.0,"tipo":"P1"},{"ciudad":"Venustiano Carranza","estado":"Ciudad de México","total":2,"conteos":[0,0,0,1,1],"lat":19.43,"lng":-99.1,"tipo":"P1"},{"ciudad":"Álvaro Obregón","estado":"Ciudad de México","total":9,"conteos":[2,2,3,2,0],"lat":19.36,"lng":-99.2,"tipo":"P1"},{"ciudad":"Saltillo","estado":"Coahuila","total":5,"conteos":[1,1,2,1,0],"lat":25.42,"lng":-101.0,"tipo":"P1"},{"ciudad":"Torreón","estado":"Coahuila","total":5,"conteos":[3,0,1,1,0],"lat":25.54,"lng":-103.45,"tipo":"P1"},{"ciudad":"Coacalco de Berriozábal","estado":"Estado de México","total":0,"conteos":[0,0,0,0,0],"lat":19.64,"lng":-99.1,"tipo":"P1"},{"ciudad":"Cuautitlán Izcalli","estado":"Estado de México","total":11,"conteos":[7,0,1,2,1],"lat":19.64,"lng":-99.22,"tipo":"P1"},{"ciudad":"Ecatepec de Morelos","estado":"Estado de México","total":2,"conteos":[0,1,1,0,0],"lat":19.6,"lng":-99.05,"tipo":"P1"},{"ciudad":"Naucalpan de Juárez","estado":"Estado de México","total":24,"conteos":[11,3,3,6,1],"lat":19.47,"lng":-99.24,"tipo":"P1"},{"ciudad":"Tecámac","estado":"Estado de México","total":0,"conteos":[0,0,0,0,0],"lat":19.71,"lng":-98.97,"tipo":"P1"},{"ciudad":"Tlalnepantla de Baz","estado":"Estado de México","total":21,"conteos":[10,2,3,6,0],"lat":19.54,"lng":-99.2,"tipo":"P1"},{"ciudad":"Toluca de Lerdo","estado":"Estado de México","total":10,"conteos":[4,0,1,4,1],"lat":19.29,"lng":-99.66,"tipo":"P1"},{"ciudad":"Morelia","estado":"Michoacán","total":7,"conteos":[1,1,2,3,0],"lat":19.7,"lng":-101.19,"tipo":"P1"},{"ciudad":"Heroica Puebla de Zaragoza","estado":"Puebla","total":28,"conteos":[12,3,3,9,1],"lat":19.04,"lng":-98.2,"tipo":"P1"},{"ciudad":"Mérida","estado":"Yucatán","total":21,"conteos":[4,4,4,8,1],"lat":20.97,"lng":-89.62,"tipo":"P1"},{"ciudad":"Tijuana","estado":"Baja California","total":0,"conteos":[0,0,0,0,0],"lat":32.52,"lng":-117.04,"tipo":"P2P3"},{"ciudad":"Colima","estado":"Colima","total":0,"conteos":[0,0,0,0,0],"lat":19.24,"lng":-103.72,"tipo":"P2P3"},{"ciudad":"Ixtapaluca","estado":"Estado de México","total":1,"conteos":[0,1,0,0,0],"lat":19.31,"lng":-98.88,"tipo":"P2P3"},{"ciudad":"Ciudad Nezahualcóyotl","estado":"Estado de México","total":3,"conteos":[1,1,0,1,0],"lat":19.4,"lng":-99.02,"tipo":"P2P3"},{"ciudad":"León de los Aldama","estado":"Guanajuato","total":0,"conteos":[0,0,0,0,0],"lat":21.12,"lng":-101.68,"tipo":"P2P3"},{"ciudad":"Silao","estado":"Guanajuato","total":0,"conteos":[0,0,0,0,0],"lat":20.93,"lng":-101.43,"tipo":"P2P3"},{"ciudad":"Acapulco","estado":"Guerrero","total":0,"conteos":[0,0,0,0,0],"lat":16.86,"lng":-99.88,"tipo":"P2P3"},{"ciudad":"Pachuca","estado":"Hidalgo","total":1,"conteos":[0,0,1,0,0],"lat":20.12,"lng":-98.73,"tipo":"P2P3"},{"ciudad":"Lázaro Cárdenas","estado":"Michoacán","total":0,"conteos":[0,0,0,0,0],"lat":17.96,"lng":-102.19,"tipo":"P2P3"},{"ciudad":"Cuernavaca","estado":"Morelos","total":0,"conteos":[0,0,0,0,0],"lat":18.92,"lng":-99.23,"tipo":"P2P3"},{"ciudad":"Tepic","estado":"Nayarit","total":2,"conteos":[0,2,0,0,0],"lat":21.5,"lng":-104.89,"tipo":"P2P3"},{"ciudad":"Oaxaca","estado":"Oaxaca","total":0,"conteos":[0,0,0,0,0],"lat":17.07,"lng":-96.72,"tipo":"P2P3"},{"ciudad":"Cancún","estado":"Quintana Roo","total":0,"conteos":[0,0,0,0,0],"lat":21.16,"lng":-86.85,"tipo":"P2P3"},{"ciudad":"Culiacán","estado":"Sinaloa","total":0,"conteos":[0,0,0,0,0],"lat":24.79,"lng":-107.39,"tipo":"P2P3"},{"ciudad":"Villahermosa","estado":"Tabasco","total":2,"conteos":[0,2,0,0,0],"lat":17.99,"lng":-92.93,"tipo":"P2P3"},{"ciudad":"Ciudad Victoria","estado":"Tamaulipas","total":0,"conteos":[0,0,0,0,0],"lat":23.74,"lng":-99.15,"tipo":"P2P3"},{"ciudad":"Heroica Matamoros","estado":"Tamaulipas","total":0,"conteos":[0,0,0,0,0],"lat":25.87,"lng":-97.5,"tipo":"P2P3"},{"ciudad":"Nuevo Laredo","estado":"Tamaulipas","total":0,"conteos":[0,0,0,0,0],"lat":27.48,"lng":-99.52,"tipo":"P2P3"},{"ciudad":"Tampico","estado":"Tamaulipas","total":0,"conteos":[0,0,0,0,0],"lat":22.23,"lng":-97.86,"tipo":"P2P3"},{"ciudad":"Veracruz","estado":"Veracruz","total":1,"conteos":[0,0,0,1,0],"lat":19.18,"lng":-96.14,"tipo":"P2P3"},{"ciudad":"Xalapa","estado":"Veracruz","total":0,"conteos":[0,0,0,0,0],"lat":19.54,"lng":-96.93,"tipo":"P2P3"}];
+
+let filtroActivo='all', markers=[];
+const map=L.map('map').setView([22.5,-102],5);
+L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{attribution:'&copy; OpenStreetMap, CartoDB',maxZoom:18}).addTo(map);
+const ctx=document.getElementById('espChart').getContext('2d');
+const espChart=new Chart(ctx,{type:'bar',data:{labels:ESP_SHORT,datasets:[{data:[0,0,0,0,0],backgroundColor:ESP_COLORS,borderRadius:4,borderSkipped:false}]},options:{plugins:{legend:{display:false}},scales:{x:{ticks:{color:'#84F7B2',font:{size:9}},grid:{color:'#0a4a55'}},y:{ticks:{color:'#84F7B2',font:{size:10}},grid:{color:'#0a4a55'}}}}});
+
+function getColor(d){if(d.total===0)return'#888';const g=d.conteos.filter(c=>c<2).length;if(g===0)return'#36CC69';if(g<=2)return'#FFD166';return'#ff6b6b';}
+
+function render(){
+  markers.forEach(m=>map.removeLayer(m));markers=[];
+  const vis=filtroActivo==='all'?DATA:DATA.filter(d=>d.tipo===filtroActivo);
+  vis.forEach(d=>{
+    const m=L.circleMarker([d.lat,d.lng],{radius:Math.min(8+d.total*0.5,26),fillColor:getColor(d),color:'#fff',weight:1.5,fillOpacity:.85}).addTo(map);
+    m.bindTooltip(`<b>${d.ciudad}</b><br>${d.estado}<br><b>${d.total} doctores</b> (${d.tipo})`,{sticky:true});
+    m.on('click',()=>detalle(d));markers.push(m);
+  });
+  const tot=vis.reduce((s,d)=>s+d.total,0);
+  document.getElementById('s-total').textContent=tot;
+  document.getElementById('s-ciudades').textContent=vis.length;
+  document.getElementById('s-ok').textContent=vis.filter(d=>d.conteos.every(c=>c>=2)).length;
+  document.getElementById('s-gap').textContent=vis.filter(d=>d.conteos.some(c=>c<2)||d.total===0).length;
+  const te=[0,0,0,0,0];vis.forEach(d=>d.conteos.forEach((c,i)=>te[i]+=c));
+  espChart.data.datasets[0].data=te;espChart.update();
+}
+
+function detalle(d){
+  const mx=Math.max(...d.conteos,1);
+  let h=`<div class="detail-city">${d.ciudad}</div><div class="detail-state">${d.estado}</div><span class="detail-badge ${d.tipo==='P1'?'badge-p1':'badge-p2p3'}">${d.tipo}</span><div style="margin-top:8px">`;
+  d.conteos.forEach((c,i)=>{h+=`<div class="esp-row"><div><div class="esp-name">${ESP_SHORT[i]}</div><div class="bar"><div class="bar-fill" style="width:${Math.round(c/mx*100)}%;background:${c>=2?'#36CC69':'#ff6b6b'}"></div></div></div><div class="esp-cnt ${c>=2?'ok':'gap'}">${c}</div></div>`;});
+  h+=`</div><div style="margin-top:10px;font-size:11px;color:#84F7B2">Total: <b style="color:#36CC69">${d.total}</b> | Gaps: <b style="color:#ff6b6b">${d.conteos.filter(c=>c<2).length}</b> especialidades</div>`;
+  document.getElementById('detail').innerHTML=h;
+}
+
+function filtrar(t){
+  filtroActivo=t;
+  document.querySelectorAll('.pill').forEach(p=>p.classList.add('inactive'));
+  if(t==='all')document.querySelector('.pill.all').classList.remove('inactive');
+  else document.querySelector('.pill.'+t.toLowerCase()).classList.remove('inactive');
+  render();
+}
+
+render();
+</script>
+</body>
+</html>
